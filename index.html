@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Llama.cpp Chat (Streaming + Markdown + MathJax + Reasoning)</title>
+  <link rel="icon" href="assets/favicon.ico" sizes="any">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- App CSS (extracted from inline <style>) -->
+  <link rel="stylesheet" href="./assets/css/app.css" />
+
+  <!-- MathJax (tex-svg provides tex2svgPromise)
+       Keep config inline so it is defined BEFORE MathJax loads. -->
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['$', '$'], ['\\(', '\\)']],
+        displayMath: [['$$', '$$'], ['\\[', '\\]']]
+      },
+      svg: {fontCache: 'global'}
+    };
+  </script>
+  <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+
+  <!-- Markdown + Sanitizer (globals: marked, DOMPurify)
+       Assumed to exist; keeping CDN form here. If you vendor them, replace src accordingly. -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js"></script>
+</head>
+
+<body>
+  <div id="header">
+    <div id="title">Llama.cpp Local Chat</div>
+
+    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+      <label>
+        Endpoint
+        <input id="endpoint" type="text" value="http://localhost:8080/v1/chat/completions" spellcheck="false"
+          style="width: 340px;" />
+      </label>
+
+      <label title="If enabled, fetches /v1/models and fills the model field automatically.">
+        Auto model
+        <input id="autoModel" type="checkbox" checked />
+      </label>
+
+      <label title="Model ID used in the request.">
+        Model
+        <input id="model" type="text" value="" spellcheck="false" style="width: 190px;" placeholder="(auto)" />
+      </label>
+
+      <button id="refreshModelsBtn" type="button" title="Fetch models from /v1/models">Refresh models</button>
+
+      <label title="If your server streams reasoning_content, display it in a Reasoning block.">
+        Show reasoning
+        <input id="includeReasoning" type="checkbox" checked />
+      </label>
+
+      <button id="saveBtn" type="button" title="Save conversation as JSON">Save</button>
+      <button id="loadBtn" type="button" title="Load conversation JSON">Load</button>
+      <input id="loadInput" type="file" accept="application/json" style="display:none" />
+
+      <span id="tokens">Tokens: —</span>
+      <span id="speed">Speed: —</span>
+      <span id="status">Idle</span>
+    </div>
+  </div>
+
+  <div id="chat"></div>
+
+  <div id="footer">
+    <div id="utilBar">
+      <button id="attachFileBtn" type="button" title="Attach file(s) to be appended to your next message">
+        Attach file
+      </button>
+      <input id="fileInput" type="file" multiple style="display:none" />
+      <span id="fileStatus" title="">No attachments</span>
+      <div id="attachments" aria-live="polite"></div>
+    </div>
+
+    <div id="inputRow">
+      <textarea id="prompt" placeholder="Ask me anything… (Ctrl+Enter to send)" spellcheck="true"></textarea>
+      <button id="sendBtn" type="button">Send</button>
+    </div>
+  </div>
+
+  <!-- App JS (extracted from inline <script>) -->
+  <script type="module" src="./assets/js/main.js"></script>
+</body>
+
+</html>
