@@ -21,6 +21,12 @@ body{margin:0;font-family:system-ui,-apple-system,Segoe UI,sans-serif;font-size:
 #inputRow{display:flex;gap:8px;align-items:stretch;box-sizing:border-box}
 #prompt{flex:1;min-height:56px;max-height:180px;resize:vertical;padding:8px;font:inherit;box-sizing:border-box}
 #sendBtn{padding:8px 12px;font:inherit;cursor:pointer}
+.tool-io{display:flex;flex-direction:column;gap:8px}
+.tool-pane{border:1px solid var(--b2);border-radius:var(--r);background:#fff;overflow:hidden}
+.tool-pane-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border-bottom:1px solid var(--b2);font-size:var(--fsS);color:var(--muted)}
+.tool-pane-title{font-weight:600;color:var(--fg)}
+.tool-pane-copy{padding:3px 7px;font-size:var(--fsS);line-height:1.1;cursor:pointer}
+.tool-pane-body{margin:0;padding:8px;overflow:auto}
 .tool-block{border:1px solid var(--b);border-radius:var(--r);margin:8px 0}
 .tool-block>summary{cursor:pointer;padding:5px 7px;font-size:var(--fsS);user-select:none}
 .tool-content{padding:8px;border-top:1px solid var(--b);overflow:auto}

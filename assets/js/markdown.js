@@ -101,6 +101,16 @@ export const decorate = (container) => {
     wrap.appendChild(btn);
     wrap.setAttribute("data-has-copy", "1");
   });
+
+  // Tool pane copy buttons (Input/Output)
+  qsa(container, "button.tool-pane-copy").forEach((btn) => {
+    if (btn.getAttribute("data-wired") === "1") return;
+    btn.setAttribute("data-wired", "1");
+    btn.addEventListener("click", async () => {
+      const txt = btn.getAttribute("data-copy") ?? "";
+      flash(btn, await copyText(txt), { okText: "Copied", failText: txt ? "Failed" : "No content" });
+    });
+  });
 };
 
 /* ---------- render ---------- */
@@ -142,10 +152,43 @@ export const renderMarkdownInto = (renderTarget, markdownText = "") => {
     const open = state === "done" ? "" : " open";
     const idAttr = t.id ? ` data-block-id="${esc(t.id)}"` : "";
     const stateAttr = ` data-state="${esc(state)}"`;
+    const raw = String(t.inner ?? "").trim();
+
+    // Expecting the inner text produced by send.js:
+    // INPUT:\n...\n\nOUTPUT:\n...
+    // We split robustly but fall back to the raw whole text if not matched.
+    let inputText = "";
+    let outputText = "";
+    const m = raw.match(/^\s*INPUT:\s*\n([\s\S]*?)\n\s*\nOUTPUT:\s*\n([\s\S]*?)\s*$/i);
+    if (m) {
+      inputText = (m[1] ?? "").trim();
+      outputText = (m[2] ?? "").trim();
+    } else {
+      // fallback: treat everything as output
+      outputText = raw;
+    }
+
     const block =
       `<details class="tool-block"${open}${idAttr}${stateAttr}>` +
       `<summary>Tool: ${esc(t.name)}</summary>` +
-      `<div class="tool-content"><pre><code>${esc(String(t.inner ?? "").trim())}</code></pre></div>` +
+      `<div class="tool-content">` +
+      `<div class="tool-io">` +
+      `<div class="tool-pane" data-pane="input">` +
+      `<div class="tool-pane-head">` +
+      `<span class="tool-pane-title">Input</span>` +
+      `<button type="button" class="tool-pane-copy" data-copy="${esc(inputText)}">Copy</button>` +
+      `</div>` +
+      `<pre class="tool-pane-body"><code>${esc(inputText)}</code></pre>` +
+      `</div>` +
+      `<div class="tool-pane" data-pane="output">` +
+      `<div class="tool-pane-head">` +
+      `<span class="tool-pane-title">Output</span>` +
+      `<button type="button" class="tool-pane-copy" data-copy="${esc(outputText)}">Copy</button>` +
+      `</div>` +
+      `<pre class="tool-pane-body"><code>${esc(outputText)}</code></pre>` +
+      `</div>` +
+      `</div>` +
+      `</div>` +
       `</details>`;
     html = html.split(ph).join(block);
   });
