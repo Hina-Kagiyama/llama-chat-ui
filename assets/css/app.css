@@ -21,6 +21,9 @@ body{margin:0;font-family:system-ui,-apple-system,Segoe UI,sans-serif;font-size:
 #inputRow{display:flex;gap:8px;align-items:stretch;box-sizing:border-box}
 #prompt{flex:1;min-height:56px;max-height:180px;resize:vertical;padding:8px;font:inherit;box-sizing:border-box}
 #sendBtn{padding:8px 12px;font:inherit;cursor:pointer}
+.tool-block{border:1px solid var(--b);border-radius:var(--r);margin:8px 0}
+.tool-block>summary{cursor:pointer;padding:5px 7px;font-size:var(--fsS);user-select:none}
+.tool-content{padding:8px;border-top:1px solid var(--b);overflow:auto}
 .think-block{border:1px solid var(--b);border-radius:var(--r);margin:8px 0}
 .think-block>summary{cursor:pointer;padding:5px 7px;font-size:var(--fsS);user-select:none}
 .think-content{padding:8px;border-top:1px solid var(--b);text-wrap:wrap;overflow-wrap:break-word}

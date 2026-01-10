@@ -4,6 +4,22 @@ import { replaceMathWithPlaceholders, setMathMetaForElement, fillMathSlots } fro
 import { getScrollStickiness, maybeScrollToBottom } from "./scroll.js";
 
 const THINK_PATTERN = /<think>([\s\S]*?)<\/think>/g;
+const TOOL_PATTERN = /<tool\b([^>]*)>([\s\S]*?)<\/tool>/g;
+
+const parseToolAttrs = (attrs = "") => {
+  const m = String(attrs).match(/\bname="([^"]+)"/);
+  return { name: m ? m[1] : "tool" };
+};
+
+const splitToolPlaceholders = (text = "") => {
+  const tools = [];
+  const replaced = String(text ?? "").replace(TOOL_PATTERN, (_, attrs, inner) => {
+    const meta = parseToolAttrs(attrs);
+    tools.push({ name: meta.name, inner: inner ?? "" });
+    return `§§TOOL${tools.length - 1}§§`;
+  });
+  return { text: replaced, tools };
+};
 
 const captureThinkOpen = (container) =>
   qsa(container, "details.think-block").map((d) => d.open);
@@ -63,8 +79,8 @@ export const renderMarkdownInto = (renderTarget, markdownText = "") => {
   const prevOpen = captureThinkOpen(renderTarget);
 
   const { text: noThink, think } = splitThinkPlaceholders(markdownText);
-
-  const { text: noThinkOrMath, segments } = replaceMathWithPlaceholders(noThink);
+  const { text: noThinkOrTool, tools } = splitToolPlaceholders(noThink);
+  const { text: noThinkOrMath, segments } = replaceMathWithPlaceholders(noThinkOrTool);
 
   const safeHtml = window.DOMPurify.sanitize(
     window.marked.parse(noThinkOrMath, { breaks: true })
@@ -82,6 +98,16 @@ export const renderMarkdownInto = (renderTarget, markdownText = "") => {
       )}"><div class="math-render"></div></div>`
       : `<span class="math-slot" data-math-key="${esc(seg.key)}"></span>`;
     html = html.split(ph).join(slot);
+  });
+
+  tools.forEach((t, i) => {
+    const ph = `§§TOOL${i}§§`;
+    const block =
+      `<details class="tool-block" open>` +
+      `<summary>Tool: ${esc(t.name)}</summary>` +
+      `<div class="tool-content"><pre><code>${esc(String(t.inner ?? "").trim())}</code></pre></div>` +
+      `</details>`;
+    html = html.split(ph).join(block);
   });
 
   think.forEach((t, i) => {

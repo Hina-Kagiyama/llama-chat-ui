@@ -1,4 +1,4 @@
-import { qs } from "./dom.js";
+import { qs, qsa } from "./dom.js";
 import { withStickyScroll } from "./scroll.js";
 import { mkBtn, copyText, flash } from "./clipboard.js";
 import { renderMarkdownInto } from "./markdown.js";
@@ -105,8 +105,11 @@ export const createAssistantMessageElement = ({ refs }) => {
   });
 };
 
-export const setAssistantRaw = ({ msgEl, includeReasoning }, reasoning = "", content = "") => {
-  msgEl.setAttribute("data-raw-md", buildCombinedForRender({ includeReasoning }, reasoning, content));
+export const setAssistantRaw = ({ msgEl, includeReasoning, combinedMd }, reasoning = "", content = "") => {
+  msgEl.setAttribute(
+    "data-raw-md",
+    combinedMd ?? buildCombinedForRender({ includeReasoning }, reasoning, content)
+  );
   msgEl.setAttribute("data-raw-cot", reasoning ?? "");
   msgEl.setAttribute("data-raw-answer", content ?? "");
   updateFooterCopyEnabled(msgEl);
@@ -118,8 +121,8 @@ export const finalizeAssistantFooter = (msgEl) => {
 };
 
 export const closeReasoningDetails = (msgEl) => {
-  const d = qs(bodyEl(msgEl), "details.think-block");
-  if (d) d.open = false;
+  qsa(bodyEl(msgEl), "details.think-block").forEach((d) => (d.open = false));
+  qsa(bodyEl(msgEl), "details.tool-block").forEach((d) => (d.open = false));
 };
 
 const fmtDur = (ms = 0) => {

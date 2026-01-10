@@ -79,26 +79,58 @@ const safeJsonParse = (s) => {
 
 const executeToolCalls = async (toolCalls) => {
   const toolMessages = [];
+  const toolBlocks = [];
+
   for (const tc of toolCalls) {
     const id = tc.id;
-    const name = tc?.function?.name;
+    const name = tc?.function?.name || "tool";
     const argsStr = tc?.function?.arguments ?? "";
     const args = safeJsonParse(argsStr) ?? {};
 
-    let result;
+    let resultObj;
     try {
-      result = await runTool(name, args);
+      resultObj = await runTool(name, args);
     } catch (e) {
-      result = { error: String(e?.message || e) };
+      resultObj = { error: String(e?.message || e) };
     }
+
+    const resultStr = typeof resultObj === "string" ? resultObj : JSON.stringify(resultObj);
 
     toolMessages.push({
       role: "tool",
       tool_call_id: id,
-      content: typeof result === "string" ? result : JSON.stringify(result),
+      content: resultStr,
     });
+
+    toolBlocks.push(toolBlockMd({ name, argsStr: argsStr || "{}", resultStr }));
   }
-  return toolMessages;
+
+  return { toolMessages, toolBlocks };
+};
+
+const buildDisplayMd = ({ includeReasoning }, reasoningBlocks, toolBlocks, assistantText) => {
+  const parts = [];
+
+  if (includeReasoning) {
+    for (const r of reasoningBlocks) {
+      const s = String(r ?? "").trim();
+      if (s) parts.push(`<think>${s}</think>`);
+    }
+  }
+
+  for (const t of toolBlocks) {
+    const s = String(t ?? "").trim();
+    if (s) parts.push(s);
+  }
+
+  if (assistantText) parts.push(assistantText);
+
+  return parts.join("\n\n");
+};
+
+const toolBlockMd = ({ name, argsStr, resultStr }) => {
+  // Inner text will be rendered inside <pre><code>…</code></pre> by markdown.js tool renderer.
+  return `<tool name="${name}">\nINPUT:\n${argsStr}\n\nOUTPUT:\n${resultStr}\n</tool>`;
 };
 
 /**
@@ -258,6 +290,10 @@ export const sendMessage = async ({ state, refs, relayout }) => {
   const promptText = String(refs?.promptEl?.value ?? "").trim();
   const hasAtts = Array.isArray(state.pendingAttachments) && state.pendingAttachments.length > 0;
 
+  const includeReasoning = !!refs?.includeReasoningEl?.checked;
+  const reasoningBlocks = []; // multiple rounds
+  const toolBlocks = [];      // tool I/O blocks
+
   if ((!promptText && !hasAtts) || state.isSending) return;
   state.isSending = true;
 
@@ -321,6 +357,9 @@ export const sendMessage = async ({ state, refs, relayout }) => {
 
       assistantText = r.assistantText;
       reasoningText = r.reasoningText;
+
+      if (String(reasoningText ?? "").trim()) reasoningBlocks.push(reasoningText);
+
       finalUsage = r.finalUsage;
 
       // If no tool calls, we are done.
@@ -333,7 +372,20 @@ export const sendMessage = async ({ state, refs, relayout }) => {
       workingMessages = [
         ...workingMessages,
         { role: "assistant", content: "", tool_calls: r.toolCalls },
-        ...(await executeToolCalls(r.toolCalls)),
+        ...(
+          await (async () => {
+            const { toolMessages, toolBlocks: blocks } = await executeToolCalls(r.toolCalls);
+            toolBlocks.push(...blocks);
+
+            // Update the visible assistant bubble immediately to show tool I/O blocks
+            const combinedMd = buildDisplayMd({ includeReasoning }, reasoningBlocks, toolBlocks, assistantText);
+            setAssistantRaw({ msgEl, includeReasoning, combinedMd }, reasoningBlocks.join("\n\n"), assistantText);
+            renderMarkdownInto(bodyEl(msgEl), combinedMd);
+            closeReasoningDetails(msgEl);
+
+            return toolMessages;
+          })()
+        ),
       ];
 
       setStatus({ refs }, "Streaming…");
@@ -347,20 +399,17 @@ export const sendMessage = async ({ state, refs, relayout }) => {
     stopHeadline({ state });
 
     // Final render
-    const combinedFinal = buildCombinedForRender(
-      { includeReasoning: !!refs?.includeReasoningEl?.checked },
-      reasoningText,
-      assistantText
-    );
+    const combinedFinal = buildDisplayMd({ includeReasoning }, reasoningBlocks, toolBlocks, assistantText);
 
     setAssistantRaw(
-      { msgEl, includeReasoning: !!refs?.includeReasoningEl?.checked },
-      reasoningText,
+      { msgEl, includeReasoning, combinedMd: combinedFinal },
+      reasoningBlocks.join("\n\n"),
       assistantText
     );
 
     renderMarkdownInto(bodyEl(msgEl), combinedFinal);
-    if (reasoningText) closeReasoningDetails(msgEl);
+    // if (reasoningText) closeReasoningDetails(msgEl);
+    closeReasoningDetails(msgEl);
 
     // Timing markers
     const endTs = now();
