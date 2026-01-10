@@ -120,6 +120,14 @@ export const finalizeAssistantFooter = (msgEl) => {
   updateFooterCopyEnabled(msgEl);
 };
 
+export const closeDetailsById = (msgEl, blockId) => {
+  if (!blockId) return;
+  const root = (msgEl?.querySelector?.(".msg-body") ?? msgEl);
+  const sel = `details[data-block-id="${CSS.escape(blockId)}"]`;
+  const d = root?.querySelector?.(sel);
+  if (d) d.open = false;
+};
+
 export const closeReasoningDetails = (msgEl) => {
   qsa(bodyEl(msgEl), "details.think-block").forEach((d) => (d.open = false));
   qsa(bodyEl(msgEl), "details.tool-block").forEach((d) => (d.open = false));

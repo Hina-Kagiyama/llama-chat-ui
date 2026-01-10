@@ -8,8 +8,8 @@ import {
   setAssistantRaw,
   finalizeAssistantFooter,
   applyTimeMarkers,
-  closeReasoningDetails,
   buildCombinedForRender,
+  closeDetailsById,
 } from "./chat_ui.js";
 
 import { renderMarkdownInto, scheduleStreamingRender } from "./markdown.js";
@@ -25,7 +25,6 @@ import {
 } from "./headline.js";
 
 import { fetchModels } from "./models.js";
-
 import { getToolSchemas, runTool } from "./tools.js";
 
 /* ---------- internal helpers ---------- */
@@ -49,7 +48,11 @@ const parseMaybeUsage = (parsed) => {
   return u && typeof u.total_tokens === "number" ? u : null;
 };
 
-// Accumulate streaming tool_calls deltas into a final array (OpenAI-style).
+const safeJsonParse = (s) => {
+  try { return JSON.parse(String(s ?? "")); } catch { return null; }
+};
+
+// Accumulate streaming tool_calls deltas into final array
 const mergeToolCallsDelta = (buffersByIndex, toolCallsDelta = []) => {
   for (const tc of toolCallsDelta) {
     const idx = Number(tc?.index ?? 0);
@@ -66,23 +69,37 @@ const mergeToolCallsDelta = (buffersByIndex, toolCallsDelta = []) => {
   }
 };
 
-const finalizeToolCalls = (buffersByIndex) => {
-  return [...buffersByIndex.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([, v]) => v)
-    .filter((v) => v?.id && v?.function?.name);
+const finalizeToolCalls = (buffersByIndex) =>
+  [...buffersByIndex.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v).filter((v) => v?.id && v?.function?.name);
+
+// Chronological display builder:
+// events[] already includes finalized <think state="done"> and <tool state="done"> blocks in correct order.
+// We add the live block (if any) and/or the current assistant text.
+const buildDisplayMd = ({ includeReasoning, prefixMd, liveThinkId, liveReasoning, assistantText }) => {
+  const parts = [];
+  if (prefixMd) parts.push(prefixMd);
+
+  if (includeReasoning && String(liveReasoning ?? "").trim()) {
+    parts.push(`<think id="${liveThinkId}" state="live">${String(liveReasoning).trim()}</think>`);
+  }
+
+  if (assistantText) parts.push(assistantText);
+
+  return parts.join("\n\n");
 };
 
-const safeJsonParse = (s) => {
-  try { return JSON.parse(String(s ?? "")); } catch { return null; }
+const toolBlockMd = ({ id, name, argsStr, resultStr }) => {
+  return `<tool id="${id}" name="${name}" state="done">\nINPUT:\n${argsStr}\n\nOUTPUT:\n${resultStr}\n</tool>`;
 };
 
+// Execute tools and produce both backend tool messages and display events (in the same order)
 const executeToolCalls = async (toolCalls) => {
   const toolMessages = [];
-  const toolBlocks = [];
+  const toolEvents = [];
 
-  for (const tc of toolCalls) {
-    const id = tc.id;
+  for (let i = 0; i < toolCalls.length; i++) {
+    const tc = toolCalls[i];
+    const callId = tc.id;
     const name = tc?.function?.name || "tool";
     const argsStr = tc?.function?.arguments ?? "";
     const args = safeJsonParse(argsStr) ?? {};
@@ -98,53 +115,48 @@ const executeToolCalls = async (toolCalls) => {
 
     toolMessages.push({
       role: "tool",
-      tool_call_id: id,
+      tool_call_id: callId,
       content: resultStr,
     });
 
-    toolBlocks.push(toolBlockMd({ name, argsStr: argsStr || "{}", resultStr }));
+    toolEvents.push(
+      toolBlockMd({
+        id: `tool_${callId || i}`,
+        name,
+        argsStr: argsStr || "{}",
+        resultStr,
+      })
+    );
   }
 
-  return { toolMessages, toolBlocks };
-};
-
-const buildDisplayMd = ({ includeReasoning }, reasoningBlocks, toolBlocks, assistantText) => {
-  const parts = [];
-
-  if (includeReasoning) {
-    for (const r of reasoningBlocks) {
-      const s = String(r ?? "").trim();
-      if (s) parts.push(`<think>${s}</think>`);
-    }
-  }
-
-  for (const t of toolBlocks) {
-    const s = String(t ?? "").trim();
-    if (s) parts.push(s);
-  }
-
-  if (assistantText) parts.push(assistantText);
-
-  return parts.join("\n\n");
-};
-
-const toolBlockMd = ({ name, argsStr, resultStr }) => {
-  // Inner text will be rendered inside <pre><code>…</code></pre> by markdown.js tool renderer.
-  return `<tool name="${name}">\nINPUT:\n${argsStr}\n\nOUTPUT:\n${resultStr}\n</tool>`;
+  return { toolMessages, toolEvents };
 };
 
 /**
- * One streaming round. Returns:
- * - assistantText, reasoningText
- * - toolCalls (array)
- * - finalUsage
+ * One streaming round; renders:
+ * - prefixMd (done events)
+ * - live reasoning block for this round
+ * - assistantText
+ *
+ * Returns assistantText, reasoningText, toolCalls, finalUsage
  */
-const runStreamingRound = async ({ state, refs, endpoint, model, messages, msgEl, toolSchemas }) => {
+const runStreamingRound = async ({
+  state, refs,
+  endpoint, model,
+  messages,
+  msgEl,
+  toolSchemas,
+  includeReasoning,
+  prefixMd,
+  liveThinkId,
+  cotPrefix,
+}) => {
   let assistantText = "";
   let reasoningText = "";
   let finalUsage = null;
 
-  const toolBuffers = new Map(); // index -> {id, function:{name, arguments}}
+  const toolBuffers = new Map();
+  let reasoningAutoClosed = false;
 
   const response = await fetch(endpoint, {
     method: "POST",
@@ -154,8 +166,6 @@ const runStreamingRound = async ({ state, refs, endpoint, model, messages, msgEl
       messages,
       stream: true,
       stream_options: { include_usage: true },
-
-      // tools
       tools: toolSchemas,
       tool_choice: toolSchemas?.length ? "auto" : undefined,
     }),
@@ -168,7 +178,6 @@ const runStreamingRound = async ({ state, refs, endpoint, model, messages, msgEl
 
   let done = false;
   let buffer = "";
-  let reasoningAutoClosed = false;
 
   while (!done) {
     const { value, done: readerDone } = await reader.read();
@@ -199,12 +208,9 @@ const runStreamingRound = async ({ state, refs, endpoint, model, messages, msgEl
         const dContent = delta.content ?? "";
         const dReason = delta.reasoning_content ?? (delta.reasoning ?? "");
         const dToolCalls = delta.tool_calls ?? null;
-
         const ts = now();
 
-        if (dToolCalls && Array.isArray(dToolCalls)) {
-          mergeToolCallsDelta(toolBuffers, dToolCalls);
-        }
+        if (Array.isArray(dToolCalls)) mergeToolCallsDelta(toolBuffers, dToolCalls);
 
         if (dReason) {
           reasoningText += dReason;
@@ -221,8 +227,9 @@ const runStreamingRound = async ({ state, refs, endpoint, model, messages, msgEl
             state.liveStats.answerEndTs = ts;
           }
 
+          // Collapse ONLY the current live reasoning block once answer begins
           if (!reasoningAutoClosed && reasoningText) {
-            closeReasoningDetails(msgEl);
+            closeDetailsById(msgEl, liveThinkId);
             reasoningAutoClosed = true;
           }
         }
@@ -230,23 +237,28 @@ const runStreamingRound = async ({ state, refs, endpoint, model, messages, msgEl
         if (dReason || dContent) {
           if (state.liveStats) state.liveStats.completionChars += (dReason.length + dContent.length);
 
-          setAssistantRaw(
-            { msgEl, includeReasoning: !!refs?.includeReasoningEl?.checked },
-            reasoningText,
-            assistantText
-          );
+          const combinedMd = buildDisplayMd({
+            includeReasoning,
+            prefixMd,
+            liveThinkId,
+            liveReasoning: reasoningText,
+            assistantText,
+          });
 
-          const combined = buildCombinedForRender(
-            { includeReasoning: !!refs?.includeReasoningEl?.checked },
-            reasoningText,
+          // Copy CoT = (previous rounds) + (current live)
+          const cotCombined = [cotPrefix, String(reasoningText ?? "").trim()].filter(Boolean).join("\n\n");
+
+          setAssistantRaw(
+            { msgEl, includeReasoning, combinedMd },
+            cotCombined,
             assistantText
           );
 
           scheduleStreamingRender({
             state,
             msgEl,
-            text: combined,
-            scrollEl: refs.chatEl,       // if you applied the sticky-scroll refactor
+            text: combinedMd,
+            scrollEl: refs.chatEl,
             thresholdPx: 180,
           });
 
@@ -266,7 +278,6 @@ const runStreamingRound = async ({ state, refs, endpoint, model, messages, msgEl
       assistantText = msg.content ?? "";
       reasoningText = msg.reasoning_content ?? (msg.reasoning ?? "");
 
-      // Non-stream tool_calls
       if (Array.isArray(msg.tool_calls)) {
         for (let i = 0; i < msg.tool_calls.length; i++) toolBuffers.set(i, msg.tool_calls[i]);
       }
@@ -281,8 +292,7 @@ const runStreamingRound = async ({ state, refs, endpoint, model, messages, msgEl
     }
   }
 
-  const toolCalls = finalizeToolCalls(toolBuffers);
-  return { assistantText, reasoningText, toolCalls, finalUsage };
+  return { assistantText, reasoningText, toolCalls: finalizeToolCalls(toolBuffers), finalUsage };
 };
 
 /* ---------- public API ---------- */
@@ -290,14 +300,11 @@ export const sendMessage = async ({ state, refs, relayout }) => {
   const promptText = String(refs?.promptEl?.value ?? "").trim();
   const hasAtts = Array.isArray(state.pendingAttachments) && state.pendingAttachments.length > 0;
 
-  const includeReasoning = !!refs?.includeReasoningEl?.checked;
-  const reasoningBlocks = []; // multiple rounds
-  const toolBlocks = [];      // tool I/O blocks
-
   if ((!promptText && !hasAtts) || state.isSending) return;
   state.isSending = true;
 
   const toolSchemas = getToolSchemas();
+  const includeReasoning = !!refs?.includeReasoningEl?.checked;
 
   try {
     state.lastUsage = null;
@@ -316,10 +323,8 @@ export const sendMessage = async ({ state, refs, relayout }) => {
 
     appendUserMessage({ refs }, userDisplay);
 
-    // Start with: ...existing conversation + this user message
     let workingMessages = [...(state.messages || []), { role: "user", content: userPayload }];
 
-    // Live stats init
     state.liveStats = {
       startTs: now(),
       completionChars: 0,
@@ -332,84 +337,94 @@ export const sendMessage = async ({ state, refs, relayout }) => {
     setTokens({ state, refs }, null);
     setSpeed({ refs }, 0, NaN);
     startHeadline({ state, refs });
-
     setStatus({ refs }, "Streaming…");
 
-    // Single UI bubble for the *final* answer (tool calls stay behind the scenes)
     const msgEl = createAssistantMessageElement({ refs });
+
+    // Chronological timeline of finalized blocks (already wrapped with state="done")
+    const events = [];
+    const allReasoningParts = [];
 
     const MAX_TOOL_ROUNDS = 4;
 
     let assistantText = "";
-    let reasoningText = "";
     let finalUsage = null;
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+      const prefixMd = events.join("\n\n");
+      const liveThinkId = `think_r${round + 1}`;
+
+      const cotPrefix = allReasoningParts.join("\n\n");
+
       const r = await runStreamingRound({
-        state,
-        refs,
-        endpoint,
-        model,
+        state, refs,
+        endpoint, model,
         messages: workingMessages,
         msgEl,
         toolSchemas,
+        includeReasoning,
+        prefixMd,
+        liveThinkId,
+        cotPrefix,
       });
 
       assistantText = r.assistantText;
-      reasoningText = r.reasoningText;
-
-      if (String(reasoningText ?? "").trim()) reasoningBlocks.push(reasoningText);
-
       finalUsage = r.finalUsage;
 
-      // If no tool calls, we are done.
+      const roundReasoning = String(r.reasoningText ?? "").trim();
+      if (roundReasoning) {
+        allReasoningParts.push(roundReasoning);
+
+        // Finalize this round’s reasoning in the timeline (collapse by state="done")
+        if (includeReasoning) {
+          events.push(`<think id="${liveThinkId}" state="done">${roundReasoning}</think>`);
+        }
+      }
+
+      // No tool calls => finished
       if (!r.toolCalls.length) break;
 
       setStatus({ refs }, `Calling ${r.toolCalls.length} tool(s)…`);
 
-      // Append assistant tool_call message + tool results to the conversation
-      // (We do not render this as a user-visible message; it is behind the scenes.)
+      // Add assistant tool_calls + tool results into backend conversation
+      const { toolMessages, toolEvents } = await executeToolCalls(r.toolCalls);
+
       workingMessages = [
         ...workingMessages,
         { role: "assistant", content: "", tool_calls: r.toolCalls },
-        ...(
-          await (async () => {
-            const { toolMessages, toolBlocks: blocks } = await executeToolCalls(r.toolCalls);
-            toolBlocks.push(...blocks);
-
-            // Update the visible assistant bubble immediately to show tool I/O blocks
-            const combinedMd = buildDisplayMd({ includeReasoning }, reasoningBlocks, toolBlocks, assistantText);
-            setAssistantRaw({ msgEl, includeReasoning, combinedMd }, reasoningBlocks.join("\n\n"), assistantText);
-            renderMarkdownInto(bodyEl(msgEl), combinedMd);
-            closeReasoningDetails(msgEl);
-
-            return toolMessages;
-          })()
-        ),
+        ...toolMessages,
       ];
+
+      // Append tool blocks to the display timeline in the exact order executed
+      events.push(...toolEvents);
+
+      // Update the visible bubble immediately (timeline so far + whatever assistantText exists)
+      const combinedMd = [events.join("\n\n"), assistantText].filter(Boolean).join("\n\n");
+      setAssistantRaw(
+        { msgEl, includeReasoning, combinedMd },
+        allReasoningParts.join("\n\n"),
+        assistantText
+      );
+      renderMarkdownInto(bodyEl(msgEl), combinedMd);
 
       setStatus({ refs }, "Streaming…");
     }
 
-    // Flush any pending render timer
     if (state.renderTimeoutId) {
       clearTimeout(state.renderTimeoutId);
       state.renderTimeoutId = null;
     }
     stopHeadline({ state });
 
-    // Final render
-    const combinedFinal = buildDisplayMd({ includeReasoning }, reasoningBlocks, toolBlocks, assistantText);
+    // Final render = finalized timeline (already in correct order) + assistant answer
+    const finalMd = [events.join("\n\n"), assistantText].filter(Boolean).join("\n\n");
 
     setAssistantRaw(
-      { msgEl, includeReasoning, combinedMd: combinedFinal },
-      reasoningBlocks.join("\n\n"),
+      { msgEl, includeReasoning, combinedMd: finalMd },
+      allReasoningParts.join("\n\n"),
       assistantText
     );
-
-    renderMarkdownInto(bodyEl(msgEl), combinedFinal);
-    // if (reasoningText) closeReasoningDetails(msgEl);
-    closeReasoningDetails(msgEl);
+    renderMarkdownInto(bodyEl(msgEl), finalMd);
 
     // Timing markers
     const endTs = now();
@@ -432,13 +447,10 @@ export const sendMessage = async ({ state, refs, relayout }) => {
     applyTimeMarkers(msgEl, reasonMs, answerMs);
     finalizeAssistantFooter(msgEl);
 
-    // Persist conversation to state.messages:
-    // - Keep the actual tool exchange in the context (workingMessages)
-    // - But store only the final assistantText for UI/history, like before.
+    // Persist full workingMessages (includes tool exchange) + final assistant content
     state.messages = [...workingMessages, { role: "assistant", content: assistantText }];
     trimConversation(state);
 
-    // Final speed paint
     if (finalUsage && state.liveStats) {
       const elapsed = Math.max((now() - state.liveStats.startTs) / 1000, 0.001);
       const chps = state.liveStats.completionChars / elapsed;
@@ -453,6 +465,7 @@ export const sendMessage = async ({ state, refs, relayout }) => {
 
     if (refs?.promptEl) refs.promptEl.value = "";
     clearPendingAttachments({ state, refs, relayout });
+
     setStatus({ refs }, "Idle");
     relayout?.();
   } catch (err) {
@@ -462,13 +475,12 @@ export const sendMessage = async ({ state, refs, relayout }) => {
       state.renderTimeoutId = null;
     }
 
+    // Render error in a new assistant bubble (same as before)
     const errEl = createAssistantMessageElement({ refs });
     const rawErr = `**Error:** ${err?.message || "Unknown error."}`;
-
     errEl.setAttribute("data-raw-md", rawErr);
     errEl.setAttribute("data-raw-answer", rawErr);
     errEl.setAttribute("data-raw-cot", "");
-
     renderMarkdownInto(bodyEl(errEl), rawErr);
     finalizeAssistantFooter(errEl);
 
