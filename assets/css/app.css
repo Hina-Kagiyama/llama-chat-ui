@@ -30,6 +30,7 @@ body{margin:0;font-family:system-ui,-apple-system,Segoe UI,sans-serif;font-size:
 .tool-block{border:1px solid var(--b);border-radius:var(--r);margin:8px 0}
 .tool-block>summary{cursor:pointer;padding:5px 7px;font-size:var(--fsS);user-select:none}
 .tool-content{padding:8px;border-top:1px solid var(--b);overflow:auto}
+.think-pre{margin:0;white-space:pre-wrap;overflow-wrap:break-word}
 .think-block{border:1px solid var(--b);border-radius:var(--r);margin:8px 0}
 .think-block>summary{cursor:pointer;padding:5px 7px;font-size:var(--fsS);user-select:none}
 .think-content{padding:8px;border-top:1px solid var(--b);text-wrap:wrap;overflow-wrap:break-word}

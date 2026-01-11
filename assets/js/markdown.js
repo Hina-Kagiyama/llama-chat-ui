@@ -180,7 +180,7 @@ export const renderMarkdownInto = (renderTarget, markdownText = "") => {
     const block =
       `<details class="think-block"${open}${idAttr}${stateAttr}>` +
       `<summary>Reasoning</summary>` +
-      `<div class="think-content"><code>${esc(String(t.inner ?? "").trim())}</code></div>` +
+      `<div class="think-content"><pre class="think-pre"><code>${esc(String(t.inner ?? "").trim())}</code></pre></div>` +
       `</details>`;
     html = html.split(ph).join(block);
   });

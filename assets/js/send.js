@@ -6,8 +6,9 @@ import {
   setAssistantRaw,
   finalizeAssistantFooter,
   applyTimeMarkers,
-  buildCombinedForRender,
+  // buildCombinedForRender,
   closeDetailsById,
+  closeReasoningDetails
 } from "./chat_ui.js";
 import { renderMarkdownInto, scheduleStreamingRender } from "./markdown.js";
 import {
@@ -68,12 +69,15 @@ const finalizeToolCalls = (buffersByIndex) =>
 
 // events[] already includes finalized <think state="done"> and <tool state="done"> blocks in correct order.
 // We add the live block (if any) and/or the current assistant text.
-const buildDisplayMd = ({ includeReasoning, prefixMd, liveThinkId, liveReasoning, assistantText }) => {
+const buildDisplayMd = ({ includeReasoning, prefixMd, liveThinkId, liveThinkState, liveReasoning, assistantText }) => {
   const parts = [];
   if (prefixMd) parts.push(prefixMd);
 
   if (includeReasoning && String(liveReasoning ?? "").trim()) {
-    parts.push(`<think id="${liveThinkId}" state="live">${String(liveReasoning).trim()}</think>`);
+    // parts.push(`<think id="${liveThinkId}" state="live">${String(liveReasoning).trim()}</think>`);
+    parts.push(
+      `<think id="${liveThinkId}" state="${liveThinkState || "live"}">${String(liveReasoning).trim()}</think>`
+    );
   }
 
   if (assistantText) parts.push(assistantText);
@@ -148,6 +152,7 @@ const runStreamingRound = async ({
   let finalUsage = null;
 
   const toolBuffers = new Map();
+  let liveThinkState = "live"; // becomes "done" once answer starts
   let reasoningAutoClosed = false;
 
   const response = await fetch(endpoint, {
@@ -219,9 +224,9 @@ const runStreamingRound = async ({
             state.liveStats.answerEndTs = ts;
           }
 
-          // Collapse ONLY the current live reasoning block once answer begins
-          if (!reasoningAutoClosed && reasoningText) {
-            closeDetailsById(msgEl, liveThinkId);
+          // collapse reasoning block once answer begins
+          if (!reasoningAutoClosed) {
+            liveThinkState = "done";   // important
             reasoningAutoClosed = true;
           }
         }
@@ -233,6 +238,7 @@ const runStreamingRound = async ({
             includeReasoning,
             prefixMd,
             liveThinkId,
+            liveThinkState,
             liveReasoning: reasoningText,
             assistantText,
           });
