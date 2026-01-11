@@ -1,15 +1,5 @@
-// assets/js/attachments.js
-//
-// Pending attachment management:
-// - Attach file(s) (text files are inlined; non-text are metadata-only)
-// - Render attachment chips UI
-// - Build the user payload appended to the next message (and the user-facing display)
-//
-// This is a direct modularization of the original single-file logic.
-
 import { humanKB } from "./dom.js";
 
-/* ---------- helpers ---------- */
 const isLikelyTextFile = (file) => {
   if (!file) return false;
   if (file.type?.startsWith("text/")) return true;
@@ -50,7 +40,6 @@ const readTextFileForChat = async (file, maxBytes) => {
   return { text, truncated, sliceBytes: sliced.size };
 };
 
-/* ---------- public: UI render ---------- */
 export const renderAttachmentsUi = ({ state, refs, relayout }) => {
   const { attachmentsEl, fileStatusEl } = refs;
 
@@ -95,7 +84,6 @@ export const renderAttachmentsUi = ({ state, refs, relayout }) => {
   relayout?.();
 };
 
-/* ---------- public: attach ---------- */
 export const attachFileToPending = async ({ file, state, refs, relayout }) => {
   const name = file?.name || "(unnamed)";
   const mime = file?.type || "application/octet-stream";
@@ -153,7 +141,6 @@ export const attachFileToPending = async ({ file, state, refs, relayout }) => {
   renderAttachmentsUi({ state, refs, relayout });
 };
 
-/* ---------- public: payload builders ---------- */
 export const buildUserPayload = (promptText = "", atts = []) => {
   const p = String(promptText ?? "").trim();
   if (!atts.length) return p;
@@ -185,7 +172,6 @@ export const buildUserDisplay = (promptText = "", atts = []) => {
   return lines.join("\n");
 };
 
-/* ---------- public: clear ---------- */
 export const clearPendingAttachments = ({ state, refs, relayout }) => {
   state.pendingAttachments = [];
   renderAttachmentsUi({ state, refs, relayout });

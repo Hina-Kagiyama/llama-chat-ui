@@ -1,8 +1,3 @@
-// assets/js/layout.js
-//
-// Maintains the fixed header/footer layout by sizing the chat viewport area.
-// Mirrors behavior from the original single-file implementation.
-
 export const updateLayout = (headerEl, footerEl, chatEl) => {
   if (!chatEl) return;
   const top = headerEl?.offsetHeight ?? 0;
@@ -11,7 +6,6 @@ export const updateLayout = (headerEl, footerEl, chatEl) => {
   chatEl.style.bottom = `${bottom}px`;
 };
 
-// Optional helper: keep layout synced when header/footer height changes (wraps ResizeObserver).
 export const installResizeObservers = ({ headerEl, footerEl, onResize }) => {
   if (typeof ResizeObserver === "undefined") return null;
 
@@ -19,7 +13,7 @@ export const installResizeObservers = ({ headerEl, footerEl, onResize }) => {
     try {
       onResize?.();
     } catch {
-      // no-op: layout shouldn't hard-fail
+      // layout shouldn't hard-fail
     }
   };
 

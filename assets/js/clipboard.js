@@ -1,7 +1,3 @@
-// assets/js/clipboard.js
-//
-// Clipboard + UI button helpers (copy + flash), extracted from the original single-file implementation.
-
 export const copyText = async (text) => {
   try {
     await navigator.clipboard.writeText(text);

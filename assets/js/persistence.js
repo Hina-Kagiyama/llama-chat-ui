@@ -1,11 +1,5 @@
-// assets/js/persistence.js
-//
-// Save/load conversation JSON + download helper + user-friendly display parsing.
-// Ported from the original single-file implementation.
-
 import { humanKB } from "./dom.js";
 
-/* ---------- export / download ---------- */
 export const exportConversationJson = (messages = []) => {
   const safe = Array.isArray(messages)
     ? messages
@@ -28,7 +22,6 @@ export const downloadText = (filename, text) => {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 };
 
-/* ---------- import ---------- */
 export const importConversationJsonText = (text) => {
   let obj;
   try {
@@ -48,14 +41,11 @@ export const importConversationJsonText = (text) => {
   return { messages };
 };
 
-/* ---------- user display parsing ---------- */
 /**
  * Converts the stored "user payload" (which may include the appended attachment blocks)
  * into a user-friendly display:
  * - shows the original prompt (pre-attachments)
  * - shows a bullet list of attachment metadata derived from the payload
- *
- * This mirrors the original behavior so loading/saving doesn't dump full inline file text into the UI.
  */
 export const userDisplayFromPayload = (payload) => {
   const s = String(payload ?? "");

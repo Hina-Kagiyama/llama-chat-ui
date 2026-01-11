@@ -1,22 +1,10 @@
-// assets/js/markdown.js
-//
-// Markdown rendering pipeline:
-// - Extract <think ...>...</think> blocks into collapsible "Reasoning" details
-// - Extract <tool ...>...</tool> blocks into collapsible "Tool" details
-// - Replace math segments with placeholders and render via MathJax (SVG) with caching
-// - Sanitize marked output with DOMPurify
-// - Add inline copy buttons for code blocks and display-math blocks
-// - Provide a throttled streaming renderer
-
 import { esc, qsa, qs } from "./dom.js";
 import { copyText, flash, mkBtn } from "./clipboard.js";
 import { replaceMathWithPlaceholders, setMathMetaForElement, fillMathSlots } from "./math.js";
 
-/* ---------- patterns ---------- */
 const THINK_PATTERN = /<think\b([^>]*)>([\s\S]*?)<\/think>/g;
 const TOOL_PATTERN = /<tool\b([^>]*)>([\s\S]*?)<\/tool>/g;
 
-/* ---------- helpers ---------- */
 const bodyEl = (msgEl) => qs(msgEl, ".msg-body") ?? msgEl;
 
 const captureThinkOpen = (container) =>
@@ -59,7 +47,6 @@ const splitToolPlaceholders = (text = "") => {
   return { text: replaced, tools };
 };
 
-/* ---------- decorate (copy buttons) ---------- */
 export const decorate = (container) => {
   // Code: pre > code only inside .msg-body, exclude think-block/tool-block, add once
   qsa(container, "pre > code").forEach((code) => {
@@ -85,7 +72,7 @@ export const decorate = (container) => {
     pre.setAttribute("data-has-copy", "1");
   });
 
-  // Display math blocks we created: copy TeX content only (no $$)
+  // math blocks
   qsa(container, ".math-block-wrap").forEach((wrap) => {
     if (wrap.getAttribute("data-has-copy") === "1") return;
     if (!wrap.closest(".msg-body")) return;
@@ -113,26 +100,16 @@ export const decorate = (container) => {
   });
 };
 
-/* ---------- render ---------- */
 export const renderMarkdownInto = (renderTarget, markdownText = "") => {
   const prevOpen = captureThinkOpen(renderTarget);
 
-  // 1) Extract <think ...>...</think>
   const { text: noThink, think } = splitThinkPlaceholders(markdownText);
-
-  // 2) Extract <tool ...>...</tool>
   const { text: noThinkOrTool, tools } = splitToolPlaceholders(noThink);
-
-  // 3) Replace math with placeholders
   const { text: noThinkToolOrMath, segments } = replaceMathWithPlaceholders(noThinkOrTool);
-
-  // 4) Markdown -> sanitize
   const safeHtml = window.DOMPurify.sanitize(
     window.marked.parse(noThinkToolOrMath, { breaks: true })
   );
   let html = safeHtml;
-
-  // 5) Swap math placeholders -> slots + store meta
   setMathMetaForElement(renderTarget, segments);
 
   segments.forEach((seg, i) => {
@@ -145,7 +122,6 @@ export const renderMarkdownInto = (renderTarget, markdownText = "") => {
     html = html.split(ph).join(slot);
   });
 
-  // 6) Swap tool placeholders -> details blocks (open if not done)
   tools.forEach((t, i) => {
     const ph = `§§TOOL${i}§§`;
     const state = (t.state || "live").toLowerCase();
@@ -154,19 +130,14 @@ export const renderMarkdownInto = (renderTarget, markdownText = "") => {
     const stateAttr = ` data-state="${esc(state)}"`;
     const raw = String(t.inner ?? "").trim();
 
-    // Expecting the inner text produced by send.js:
     // INPUT:\n...\n\nOUTPUT:\n...
-    // We split robustly but fall back to the raw whole text if not matched.
     let inputText = "";
     let outputText = "";
     const m = raw.match(/^\s*INPUT:\s*\n([\s\S]*?)\n\s*\nOUTPUT:\s*\n([\s\S]*?)\s*$/i);
     if (m) {
       inputText = (m[1] ?? "").trim();
       outputText = (m[2] ?? "").trim();
-    } else {
-      // fallback: treat everything as output
-      outputText = raw;
-    }
+    } else { outputText = raw; }
 
     const block =
       `<details class="tool-block"${open}${idAttr}${stateAttr}>` +
@@ -193,9 +164,6 @@ export const renderMarkdownInto = (renderTarget, markdownText = "") => {
     html = html.split(ph).join(block);
   });
 
-  // 7) Swap think placeholders -> details blocks
-  // Preserve prior open/close only for blocks that had no explicit state;
-  // otherwise state controls open/close.
   think.forEach((t, i) => {
     const ph = `§§THINK${i}§§`;
     const state = (t.state || "").toLowerCase();
@@ -222,7 +190,6 @@ export const renderMarkdownInto = (renderTarget, markdownText = "") => {
   decorate(renderTarget);
 };
 
-/* ---------- streaming render throttle ---------- */
 export const scheduleStreamingRender = ({ state, msgEl, text, scrollEl = null, thresholdPx = 180 }) => {
   state.pendingRender.el = msgEl;
   state.pendingRender.text = text;
@@ -236,7 +203,6 @@ export const scheduleStreamingRender = ({ state, msgEl, text, scrollEl = null, t
 
     renderMarkdownInto(bodyEl(el), state.pendingRender.text);
 
-    // Optional sticky scroll behavior (if you’ve implemented it)
     if (scrollEl) {
       const distance = scrollEl.scrollHeight - (scrollEl.scrollTop + scrollEl.clientHeight);
       if (distance <= thresholdPx) scrollEl.scrollTop = scrollEl.scrollHeight;

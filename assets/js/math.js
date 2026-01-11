@@ -1,20 +1,12 @@
-// assets/js/math.js
-//
-// Math placeholdering + incremental MathJax SVG rendering with caching.
-// Ported from the original single-file implementation.
-
 import { qsa } from "./dom.js";
 
-/* ---------- patterns ---------- */
 const COMPLETE_MATH_PATTERN =
   /\$\$[\s\S]*?\$\$|\$[^$\n]*\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)/g;
 
-/* ---------- per-element meta + global caches ---------- */
 const mathMetaByElement = new WeakMap(); // element -> Map(key -> {raw, tex, display, key})
 const mathSvgCache = new Map();          // key -> rendered SVG outerHTML
 const mathInflight = new Map();          // key -> Promise(html|null)
 
-/* ---------- helpers ---------- */
 const hashDjb2 = (s) => {
   let h = 5381;
   for (let i = 0; i < s.length; i++) h = ((h << 5) + h) ^ s.charCodeAt(i);
@@ -29,7 +21,6 @@ const normalizeMath = (raw = "") => {
   return { tex: raw, display: false };
 };
 
-/* ---------- API: placeholder replacement ---------- */
 export const replaceMathWithPlaceholders = (text = "") => {
   const segments = [];
   const replaced = String(text ?? "").replace(COMPLETE_MATH_PATTERN, (match) => {
@@ -41,7 +32,6 @@ export const replaceMathWithPlaceholders = (text = "") => {
   return { text: replaced, segments };
 };
 
-/* ---------- API: meta wiring ---------- */
 export const setMathMetaForElement = (el, segments = []) => {
   const meta = new Map();
   for (const seg of segments) meta.set(seg.key, seg);
@@ -49,7 +39,6 @@ export const setMathMetaForElement = (el, segments = []) => {
   return meta;
 };
 
-/* ---------- API: fill/render slots ---------- */
 export const fillMathSlots = (container) => {
   const meta = mathMetaByElement.get(container);
   if (!meta) return;
@@ -112,7 +101,7 @@ export const fillMathSlots = (container) => {
         });
       })
       .catch(() => {
-        /* no-op */
+        /* impossible */
       });
   }
 };

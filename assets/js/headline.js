@@ -1,8 +1,3 @@
-// assets/js/headline.js
-//
-// Headline/status utilities: status text + token counters + speed display.
-// Designed to be called by send.js during streaming and at init/reset.
-
 import { fmt1, now } from "./dom.js";
 
 export const setStatus = ({ refs }, text) => {

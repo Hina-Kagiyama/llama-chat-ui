@@ -1,7 +1,5 @@
 import { now } from "./dom.js";
-
 import { buildUserPayload, buildUserDisplay, clearPendingAttachments } from "./attachments.js";
-
 import {
   appendUserMessage,
   createAssistantMessageElement,
@@ -11,9 +9,7 @@ import {
   buildCombinedForRender,
   closeDetailsById,
 } from "./chat_ui.js";
-
 import { renderMarkdownInto, scheduleStreamingRender } from "./markdown.js";
-
 import {
   setStatus,
   setTokens,
@@ -23,11 +19,9 @@ import {
   stopHeadline,
   paintHeadline,
 } from "./headline.js";
-
 import { fetchModels } from "./models.js";
 import { getToolSchemas, runTool } from "./tools.js";
 
-/* ---------- internal helpers ---------- */
 const bodyEl = (msgEl) => msgEl?.querySelector?.(".msg-body") ?? msgEl;
 
 const ensureModelSelected = async ({ state, refs }) => {
@@ -72,7 +66,6 @@ const mergeToolCallsDelta = (buffersByIndex, toolCallsDelta = []) => {
 const finalizeToolCalls = (buffersByIndex) =>
   [...buffersByIndex.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v).filter((v) => v?.id && v?.function?.name);
 
-// Chronological display builder:
 // events[] already includes finalized <think state="done"> and <tool state="done"> blocks in correct order.
 // We add the live block (if any) and/or the current assistant text.
 const buildDisplayMd = ({ includeReasoning, prefixMd, liveThinkId, liveReasoning, assistantText }) => {
@@ -92,7 +85,6 @@ const toolBlockMd = ({ id, name, argsStr, resultStr }) => {
   return `<tool id="${id}" name="${name}" state="done">\nINPUT:\n${argsStr}\n\nOUTPUT:\n${resultStr}\n</tool>`;
 };
 
-// Execute tools and produce both backend tool messages and display events (in the same order)
 const executeToolCalls = async (toolCalls) => {
   const toolMessages = [];
   const toolEvents = [];
@@ -245,7 +237,6 @@ const runStreamingRound = async ({
             assistantText,
           });
 
-          // Copy CoT = (previous rounds) + (current live)
           const cotCombined = [cotPrefix, String(reasoningText ?? "").trim()].filter(Boolean).join("\n\n");
 
           setAssistantRaw(
@@ -270,7 +261,6 @@ const runStreamingRound = async ({
     }
   }
 
-  // Fallback non-stream JSON in trailing buffer (rare)
   if (!assistantText && !reasoningText && buffer.trim()) {
     try {
       const json = JSON.parse(buffer.trim());
@@ -295,7 +285,6 @@ const runStreamingRound = async ({
   return { assistantText, reasoningText, toolCalls: finalizeToolCalls(toolBuffers), finalUsage };
 };
 
-/* ---------- public API ---------- */
 export const sendMessage = async ({ state, refs, relayout }) => {
   const promptText = String(refs?.promptEl?.value ?? "").trim();
   const hasAtts = Array.isArray(state.pendingAttachments) && state.pendingAttachments.length > 0;
@@ -341,7 +330,6 @@ export const sendMessage = async ({ state, refs, relayout }) => {
 
     const msgEl = createAssistantMessageElement({ refs });
 
-    // Chronological timeline of finalized blocks (already wrapped with state="done")
     const events = [];
     const allReasoningParts = [];
 
@@ -375,18 +363,15 @@ export const sendMessage = async ({ state, refs, relayout }) => {
       if (roundReasoning) {
         allReasoningParts.push(roundReasoning);
 
-        // Finalize this round’s reasoning in the timeline (collapse by state="done")
         if (includeReasoning) {
           events.push(`<think id="${liveThinkId}" state="done">${roundReasoning}</think>`);
         }
       }
 
-      // No tool calls => finished
       if (!r.toolCalls.length) break;
 
       setStatus({ refs }, `Calling ${r.toolCalls.length} tool(s)…`);
 
-      // Add assistant tool_calls + tool results into backend conversation
       const { toolMessages, toolEvents } = await executeToolCalls(r.toolCalls);
 
       workingMessages = [
@@ -395,10 +380,8 @@ export const sendMessage = async ({ state, refs, relayout }) => {
         ...toolMessages,
       ];
 
-      // Append tool blocks to the display timeline in the exact order executed
       events.push(...toolEvents);
 
-      // Update the visible bubble immediately (timeline so far + whatever assistantText exists)
       const combinedMd = [events.join("\n\n"), assistantText].filter(Boolean).join("\n\n");
       setAssistantRaw(
         { msgEl, includeReasoning, combinedMd },
@@ -416,7 +399,6 @@ export const sendMessage = async ({ state, refs, relayout }) => {
     }
     stopHeadline({ state });
 
-    // Final render = finalized timeline (already in correct order) + assistant answer
     const finalMd = [events.join("\n\n"), assistantText].filter(Boolean).join("\n\n");
 
     setAssistantRaw(
@@ -426,7 +408,6 @@ export const sendMessage = async ({ state, refs, relayout }) => {
     );
     renderMarkdownInto(bodyEl(msgEl), finalMd);
 
-    // Timing markers
     const endTs = now();
     let reasonMs = null;
     let answerMs = null;
@@ -447,7 +428,6 @@ export const sendMessage = async ({ state, refs, relayout }) => {
     applyTimeMarkers(msgEl, reasonMs, answerMs);
     finalizeAssistantFooter(msgEl);
 
-    // Persist full workingMessages (includes tool exchange) + final assistant content
     state.messages = [...workingMessages, { role: "assistant", content: assistantText }];
     trimConversation(state);
 
@@ -475,7 +455,6 @@ export const sendMessage = async ({ state, refs, relayout }) => {
       state.renderTimeoutId = null;
     }
 
-    // Render error in a new assistant bubble (same as before)
     const errEl = createAssistantMessageElement({ refs });
     const rawErr = `**Error:** ${err?.message || "Unknown error."}`;
     errEl.setAttribute("data-raw-md", rawErr);

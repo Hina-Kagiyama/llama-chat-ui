@@ -1,11 +1,5 @@
-// assets/js/models.js
-//
-// Model auto-detect + /v1/models fetching + context-size sniffing.
-// Ported from the original single-file implementation.
-
 import { setStatus, setTokens, resetHeadline } from "./headline.js";
 
-/* ---------- helpers ---------- */
 const modelsUrlFromEndpoint = (ep = "") => {
   ep = String(ep ?? "").trim();
   if (!ep) return null;
@@ -13,11 +7,7 @@ const modelsUrlFromEndpoint = (ep = "") => {
   const i = ep.indexOf("/v1");
   if (i !== -1) return ep.slice(0, i + 3) + "/models";
 
-  try {
-    return `${new URL(ep).origin}/v1/models`;
-  } catch {
-    return null;
-  }
+  try { return `${new URL(ep).origin}/v1/models`; } catch { return null; }
 };
 
 const pickDefaultModel = (models = []) => {
@@ -38,7 +28,6 @@ const ctxFromModelObj = (m) =>
     m?.meta?.max_context_tokens,
   ].find((v) => Number.isFinite(v) && v > 0) ?? null;
 
-/* ---------- public API ---------- */
 export const setModelInputEnabled = ({ state, refs }) => {
   const auto = !!refs?.autoModelEl?.checked;
   const modelEl = refs?.modelEl;
@@ -78,20 +67,17 @@ export const fetchModels = async ({ state, refs }) => {
 
       const chosen = pickDefaultModel(models);
 
-      // Auto-fill model field if enabled
       if (refs?.autoModelEl?.checked && chosen && refs?.modelEl) {
         refs.modelEl.value = chosen;
         refs.modelEl.placeholder = "(auto)";
       }
 
-      // Update ctx size if the model object has it
       const currentId = String(refs?.modelEl?.value ?? "").trim();
       const obj = models.find((m) => m?.id === currentId) ?? models[0] ?? null;
 
       const maybeCtx = obj ? ctxFromModelObj(obj) : null;
       if (typeof maybeCtx === "number") state.ctxSize = maybeCtx;
 
-      // Refresh token headline if we have usage already, otherwise reset
       if (state.lastUsage?.total_tokens) setTokens({ state, refs }, state.lastUsage);
       else resetHeadline({ state, refs });
 
